@@ -91,8 +91,7 @@ python scripts/train_and_evaluate.py \
   --timesteps 100000
 ```
 
-Results are written to `outputs/train_and_eval_<timestamp>/`, with checkpoints, metrics, and a JSON
-evaluation report.
+Output is written to `outputs/train_and_eval_<timestamp>/`.
 
 ## Project Layout
 
@@ -150,23 +149,7 @@ and a 7-dimensional one-hot student type.
 | `--resume-from` | none | Continue from a saved model |
 | `--out-dir` | timestamped | Output directory |
 
-Training writes a checkpoint every `--checkpoint-interval` timesteps and evaluates each one on a
-fixed set of 14 students, 2 per archetype, so checkpoints stay comparable.
-
-## Evaluation
-
-The final evaluation compares the trained policy against five reference policies:
-
-| Policy | Behavior |
-| --- | --- |
-| `random` | Picks uniformly at random |
-| `fixed_medium` | Always difficulty 0.55 |
-| `zpd_oracle` | Reads the knowledge state and targets the weakest concepts |
-| `ascending_difficulty` | Ramps difficulty from 0.30 to 0.85 |
-| `lowest_mastery_first` | Always fills the largest concept gap |
-
-Reported metrics include normalized learning gain, mastery rate, give-up rate, per-archetype
-breakdowns, and per-concept-domain gains.
+A checkpoint is written every `--checkpoint-interval` timesteps into the run directory.
 
 ## Dataset
 

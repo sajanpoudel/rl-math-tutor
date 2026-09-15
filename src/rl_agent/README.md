@@ -6,7 +6,7 @@ The reinforcement-learning environment, the problem bank client, and the evaluat
 | --- | --- |
 | `tutoring_env.py` | `SimulatedTutoringEnv`, the Gymnasium environment |
 | `problem_bank.py` | `ProblemBank` and `ProblemRecord`, loaded from the API |
-| `evaluation_framework.py` | `evaluate_policy`, baseline policies, metrics and logs |
+| `evaluation_framework.py` | `evaluate_policy`, metrics and episode logs |
 
 ## Usage
 
@@ -99,8 +99,7 @@ every problem in the bank and samples one:
    after a wrong answer and 0.60 after a give-up.
 4. After two or more consecutive failures, easier problems get a bonus of `0.15 * streak`, capped at
    0.50.
-5. Problems similar to the last 3 given this episode lose `0.4 * similarity`, which spreads selection
-   across concept domains.
+5. Problems similar to the last 3 given this episode lose `0.4 * similarity`.
 6. A difficulty floor removes problems that are too easy, applied only when the student has no
    consecutive failures and did not just give up.
 7. A difficulty ceiling removes problems that are too hard. It widens in 0.05 steps until at least 20
@@ -179,7 +178,7 @@ Useful members: `bank.problems`, `bank.concept_dim`, `bank.action_dim`, `bank.di
 ```python
 from rl_agent.evaluation_framework import EvaluationConfig, evaluate_policy
 
-cfg = EvaluationConfig(episodes=100, compare_baselines=True, baseline_episodes=50)
+cfg = EvaluationConfig(episodes=100, compare_baselines=False)
 summary = evaluate_policy(env, model, cfg)
 summary.print_report()
 ```
@@ -196,11 +195,8 @@ summary.print_report()
 | `baseline_episodes` | `30` | Episodes per baseline |
 | `capture_concept_vectors` | `True` | Keep full knowledge vectors for per-concept analysis |
 
-Baselines: `random`, `fixed_medium`, `zpd_oracle`, `ascending_difficulty`, `lowest_mastery_first`.
-
-The returned summary covers learning gain, mastery rate, give-up rate, per-student-type results,
-knowledge quartiles, per-concept-domain gains, and baseline comparisons. Call `summary.to_dict()` for
-a JSON-ready version.
+Call `summary.print_report()` for a formatted report, or `summary.to_dict()` for a JSON-ready
+version.
 
 ## Training
 
