@@ -1,0 +1,50 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+venv310/
+env/
+ENV/
+.venv/
+.venv310/
+.venv-win/
+
+# Python build / packaging
+build/
+dist/
+*.egg-info/
+
+# Cache directories
+*_cache/
+demo_cache/
+test_cache/
+.cache/
+
+# Dataset cache (HuggingFace)
+.cache/
+*.arrow
+*.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.env
+.env
+.env.*
+.envrc
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS
+.DS_Store
+Thumbs.db
+

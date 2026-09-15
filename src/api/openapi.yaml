@@ -1,0 +1,712 @@
+openapi: 3.1.0
+info:
+  title: RL-Math Problem Bank API
+  version: 0.1.0
+  description: |
+    REST API for storing and querying mathematical problems with cognitive load-based
+    concept vectors. Supports similarity search via pgvector for adaptive tutoring systems.
+
+    ## Data Model
+
+    Problems are stored with:
+    - Question text and step-by-step solution
+    - High-level concepts (e.g., "addition", "fractions")
+    - Fine-grained sub-concepts from cognitive load analysis (e.g., "add_multi_digit_with_carry")
+    - 58-dimensional L2-normalized concept vector for similarity search
+    - Difficulty score (0.0-1.0) based on Cognitive Load Theory
+
+    ## Vector Dimensions
+
+    The 58-dimensional concept vector encodes cognitive load across mathematical domains:
+
+    | Dimensions | Domain |
+    |------------|--------|
+    | 0-9 | Arithmetic Operations |
+    | 10-17 | Fractions and Decimals |
+    | 18-23 | Percentages and Ratios |
+    | 24-29 | Algebra |
+    | 30-39 | Geometry and Measurement |
+    | 40-43 | Number Theory |
+    | 44-48 | Statistics and Probability |
+    | 49-50 | Time and Money |
+    | 51-57 | Problem-Solving Skills |
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: problems
+    description: Problem management operations
+  - name: health
+    description: Service health checks
+
+paths:
+  /health:
+    get:
+      tags:
+        - health
+      summary: Health check
+      description: Returns API and database health status.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                database: true
+                version: "0.1.0"
+
+  /api/v1/problems:
+    get:
+      tags:
+        - problems
+      summary: List problems
+      description: |
+        Returns a paginated list of problems with optional filtering by difficulty range,
+        concepts, or sub-concepts.
+      operationId: listProblems
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: min_difficulty
+          in: query
+          description: Minimum difficulty score (inclusive)
+          schema:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+        - name: max_difficulty
+          in: query
+          description: Maximum difficulty score (inclusive)
+          schema:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+        - name: concepts
+          in: query
+          description: Comma-separated list of concepts to filter by (OR logic)
+          schema:
+            type: string
+          example: "addition,multiplication"
+        - name: sub_concepts
+          in: query
+          description: Comma-separated list of sub-concepts to filter by (OR logic)
+          schema:
+            type: string
+          example: "add_multi_digit_with_carry,mul_fact_retrieval"
+      responses:
+        '200':
+          description: Paginated list of problems
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemListResponse'
+
+    post:
+      tags:
+        - problems
+      summary: Create a problem
+      description: Creates a new problem in the database.
+      operationId: createProblem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemCreate'
+      responses:
+        '201':
+          description: Problem created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/v1/problems/bulk:
+    post:
+      tags:
+        - problems
+      summary: Bulk create problems
+      description: |
+        Creates multiple problems in a single request. Maximum 1000 problems per request.
+        Returns counts of successfully created and failed records.
+      operationId: createProblemsBulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProblemCreate'
+              maxItems: 1000
+      responses:
+        '201':
+          description: Bulk creation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkCreateResponse'
+              example:
+                created: 98
+                failed: 2
+                errors:
+                  - "Row 45: concept_vector must have 58 dimensions, got 50"
+        '400':
+          description: Request exceeds maximum size
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/problems/similar:
+    get:
+      tags:
+        - problems
+      summary: Find similar problems
+      description: |
+        Finds problems with similar concept vectors using cosine similarity.
+        Returns problems ordered by similarity score (highest first).
+      operationId: findSimilarProblems
+      parameters:
+        - name: vector
+          in: query
+          required: true
+          description: |
+            Comma-separated 58-dimensional concept vector. Values should be floats.
+          schema:
+            type: string
+          example: "0.5,0.0,0.0,0.0,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.8,0.0,1.0,0.0,0.0,0.0,0.0"
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: exclude_id
+          in: query
+          description: Problem ID to exclude from results
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Similar problems with similarity scores
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimilarProblemsResponse'
+        '400':
+          description: Invalid vector format or dimension
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/problems/by-difficulty:
+    get:
+      tags:
+        - problems
+      summary: Get problems by difficulty range
+      description: Returns problems within a specified difficulty range, ordered by difficulty.
+      operationId: getProblemsByDifficulty
+      parameters:
+        - name: min_difficulty
+          in: query
+          required: true
+          description: Minimum difficulty score (inclusive)
+          schema:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+        - name: max_difficulty
+          in: query
+          required: true
+          description: Maximum difficulty score (inclusive)
+          schema:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          description: List of problems in difficulty range
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProblemResponse'
+        '400':
+          description: Invalid range (min > max)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/problems/by-concepts:
+    get:
+      tags:
+        - problems
+      summary: Get problems by concepts
+      description: Returns problems containing any of the specified concepts.
+      operationId: getProblemsByConcepts
+      parameters:
+        - name: concepts
+          in: query
+          required: true
+          description: Comma-separated list of concepts
+          schema:
+            type: string
+          example: "fractions,percentages"
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          description: List of matching problems
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProblemResponse'
+        '400':
+          description: No concepts provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/problems/stats:
+    get:
+      tags:
+        - problems
+      summary: Get statistics
+      description: Returns statistics about the problem bank including total count and difficulty distribution.
+      operationId: getStatistics
+      responses:
+        '200':
+          description: Problem bank statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+              example:
+                total_problems: 7473
+                difficulty:
+                  min: 0.4108
+                  max: 0.8905
+                  avg: 0.7163
+                  count: 7473
+
+  /api/v1/problems/{problem_id}:
+    get:
+      tags:
+        - problems
+      summary: Get a problem
+      description: Returns a single problem by ID.
+      operationId: getProblem
+      parameters:
+        - name: problem_id
+          in: path
+          required: true
+          description: Problem ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Problem details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '404':
+          description: Problem not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - problems
+      summary: Update a problem
+      description: Updates an existing problem. Only provided fields are updated.
+      operationId: updateProblem
+      parameters:
+        - name: problem_id
+          in: path
+          required: true
+          description: Problem ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemUpdate'
+      responses:
+        '200':
+          description: Updated problem
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '404':
+          description: Problem not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+    delete:
+      tags:
+        - problems
+      summary: Delete a problem
+      description: Deletes a problem by ID.
+      operationId: deleteProblem
+      parameters:
+        - name: problem_id
+          in: path
+          required: true
+          description: Problem ID
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Problem deleted
+        '404':
+          description: Problem not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ProblemCreate:
+      type: object
+      required:
+        - question
+        - solution
+        - concept_vector
+        - difficulty_score
+      properties:
+        question:
+          type: string
+          minLength: 1
+          description: The math problem text
+          example: "Betty is saving money for a new wallet which costs $100. Betty has only half of the money she needs. Her parents decided to give her $15 for that purpose, and her grandparents twice as much as her parents. How much more money does Betty need to buy the wallet?"
+        solution:
+          type: string
+          minLength: 1
+          description: Step-by-step solution
+          example: |
+            In the beginning, Betty has only 100 / 2 = $50.
+            Betty's grandparents gave her 15 * 2 = $30.
+            This means, Betty needs 100 - 50 - 30 - 15 = $5 more.
+            #### 5
+        answer:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Final numerical answer
+          example: "5"
+        concepts:
+          type: array
+          items:
+            type: string
+          description: High-level mathematical concepts
+          example: ["addition", "subtraction", "multiplication", "fractions", "money_calculations"]
+        sub_concepts:
+          type: array
+          items:
+            type: string
+          description: Fine-grained sub-concepts from cognitive load analysis
+          example: ["frac_part_whole_identification", "mul_fact_retrieval", "sub_multi_digit_with_borrow"]
+        concept_vector:
+          type: array
+          items:
+            type: number
+          minItems: 58
+          maxItems: 58
+          description: 58-dimensional L2-normalized concept vector
+        difficulty_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Difficulty score based on Cognitive Load Theory
+          example: 0.7284
+        llm_reasoning:
+          type: string
+          nullable: true
+          description: LLM explanation for concept extraction
+        prerequisite_concepts:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Prerequisite concepts required
+
+    ProblemUpdate:
+      type: object
+      description: All fields are optional. Only provided fields are updated.
+      properties:
+        question:
+          type: string
+          minLength: 1
+        solution:
+          type: string
+          minLength: 1
+        answer:
+          type: string
+          maxLength: 500
+          nullable: true
+        concepts:
+          type: array
+          items:
+            type: string
+        sub_concepts:
+          type: array
+          items:
+            type: string
+        concept_vector:
+          type: array
+          items:
+            type: number
+          minItems: 58
+          maxItems: 58
+        difficulty_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        llm_reasoning:
+          type: string
+          nullable: true
+        prerequisite_concepts:
+          type: array
+          items:
+            type: string
+          nullable: true
+
+    ProblemResponse:
+      allOf:
+        - $ref: '#/components/schemas/ProblemCreate'
+        - type: object
+          required:
+            - id
+            - created_at
+            - updated_at
+          properties:
+            id:
+              type: integer
+              description: Unique problem identifier
+              example: 1
+            created_at:
+              type: string
+              format: date-time
+              description: Creation timestamp
+            updated_at:
+              type: string
+              format: date-time
+              description: Last update timestamp
+
+    ProblemListResponse:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+        - pages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemResponse'
+        total:
+          type: integer
+          description: Total number of matching problems
+          example: 7473
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        page_size:
+          type: integer
+          description: Items per page
+          example: 50
+        pages:
+          type: integer
+          description: Total number of pages
+          example: 150
+
+    SimilarProblemResponse:
+      type: object
+      required:
+        - problem
+        - similarity
+      properties:
+        problem:
+          $ref: '#/components/schemas/ProblemResponse'
+        similarity:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Cosine similarity score
+          example: 0.9234
+
+    SimilarProblemsResponse:
+      type: object
+      required:
+        - query_vector
+        - results
+      properties:
+        query_vector:
+          type: array
+          items:
+            type: number
+          description: The query vector used for similarity search
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimilarProblemResponse'
+
+    BulkCreateResponse:
+      type: object
+      required:
+        - created
+        - failed
+      properties:
+        created:
+          type: integer
+          description: Number of successfully created problems
+        failed:
+          type: integer
+          description: Number of failed creations
+        errors:
+          type: array
+          items:
+            type: string
+          description: Error messages for failed records
+
+    StatsResponse:
+      type: object
+      required:
+        - total_problems
+        - difficulty
+      properties:
+        total_problems:
+          type: integer
+          description: Total number of problems in database
+        difficulty:
+          type: object
+          properties:
+            min:
+              type: number
+              description: Minimum difficulty score
+            max:
+              type: number
+              description: Maximum difficulty score
+            avg:
+              type: number
+              description: Average difficulty score
+            count:
+              type: integer
+              description: Number of problems with difficulty scores
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - database
+        - version
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+          description: Overall service status
+        database:
+          type: boolean
+          description: Database connection status
+        version:
+          type: string
+          description: API version
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+
+    ValidationError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                description: Location of the error
+              msg:
+                type: string
+                description: Error message
+              type:
+                type: string
+                description: Error type
